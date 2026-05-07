@@ -16,10 +16,10 @@ function createTransporter() {
 
   return nodemailer.createTransport({
     host: "smtp.gmail.com",
-    port: 587,
-    secure: false,
+    port: 465,
+    secure: true,
 
-    // Ép SMTP dùng IPv4, tránh lỗi Railway connect ENETUNREACH IPv6
+    // Ép dùng IPv4 để tránh lỗi IPv6 trên Railway
     family: 4,
 
     auth: {
@@ -27,13 +27,13 @@ function createTransporter() {
       pass: gmailAppPassword,
     },
 
-    // Giảm thời gian treo nếu SMTP lỗi
-    connectionTimeout: 15000,
-    greetingTimeout: 15000,
-    socketTimeout: 20000,
+    connectionTimeout: 30000,
+    greetingTimeout: 30000,
+    socketTimeout: 30000,
 
     tls: {
       minVersion: "TLSv1.2",
+      servername: "smtp.gmail.com",
     },
   });
 }
