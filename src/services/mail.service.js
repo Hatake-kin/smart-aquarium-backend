@@ -1,18 +1,45 @@
+const dns = require("dns");
+dns.setDefaultResultOrder("ipv4first");
+
 const nodemailer = require("nodemailer");
 require("dotenv").config();
 
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.GMAIL_USER,
-    pass: process.env.GMAIL_APP_PASSWORD,
-  },
-});
+function createTransporter() {
+  const gmailUser = process.env.GMAIL_USER;
+  const gmailAppPassword = process.env.GMAIL_APP_PASSWORD
+    ? process.env.GMAIL_APP_PASSWORD.replace(/\s/g, "")
+    : "";
 
-async function sendOtpEmail(toEmail, otp) {
-  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+  if (!gmailUser || !gmailAppPassword) {
     throw new Error("Thiếu GMAIL_USER hoặc GMAIL_APP_PASSWORD trong file .env");
   }
+
+  return nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 587,
+    secure: false,
+
+    // Ép SMTP dùng IPv4, tránh lỗi Railway connect ENETUNREACH IPv6
+    family: 4,
+
+    auth: {
+      user: gmailUser,
+      pass: gmailAppPassword,
+    },
+
+    // Giảm thời gian treo nếu SMTP lỗi
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 20000,
+
+    tls: {
+      minVersion: "TLSv1.2",
+    },
+  });
+}
+
+async function sendOtpEmail(toEmail, otp) {
+  const transporter = createTransporter();
 
   await transporter.sendMail({
     from: `"Smart Aquarium" <${process.env.GMAIL_USER}>`,
@@ -22,9 +49,19 @@ async function sendOtpEmail(toEmail, otp) {
       <div style="font-family: Arial, sans-serif; max-width: 520px; margin: auto;">
         <h2>Smart Aquarium - Xác thực đăng nhập</h2>
         <p>Mã OTP đăng nhập của bạn là:</p>
-        <div style="font-size: 32px; font-weight: bold; letter-spacing: 6px; padding: 16px; background: #f2f2f2; text-align: center;">
+
+        <div style="
+          font-size: 32px;
+          font-weight: bold;
+          letter-spacing: 6px;
+          padding: 16px;
+          background: #f2f2f2;
+          text-align: center;
+          border-radius: 8px;
+        ">
           ${otp}
         </div>
+
         <p>Mã này có hiệu lực trong <b>5 phút</b>.</p>
         <p>Nếu bạn không thực hiện đăng nhập, vui lòng bỏ qua email này.</p>
       </div>
