@@ -1,49 +1,20 @@
-const dns = require("dns");
-dns.setDefaultResultOrder("ipv4first");
-
-const nodemailer = require("nodemailer");
 require("dotenv").config();
 
-function createTransporter() {
-  const gmailUser = process.env.GMAIL_USER;
-  const gmailAppPassword = process.env.GMAIL_APP_PASSWORD
-    ? process.env.GMAIL_APP_PASSWORD.replace(/\s/g, "")
-    : "";
+const { Resend } = require("resend");
 
-  if (!gmailUser || !gmailAppPassword) {
-    throw new Error("Thiếu GMAIL_USER hoặc GMAIL_APP_PASSWORD trong file .env");
-  }
-
-  return nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 465,
-    secure: true,
-
-    // Ép dùng IPv4 để tránh lỗi IPv6 trên Railway
-    family: 4,
-
-    auth: {
-      user: gmailUser,
-      pass: gmailAppPassword,
-    },
-
-    connectionTimeout: 30000,
-    greetingTimeout: 30000,
-    socketTimeout: 30000,
-
-    tls: {
-      minVersion: "TLSv1.2",
-      servername: "smtp.gmail.com",
-    },
-  });
-}
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 async function sendOtpEmail(toEmail, otp) {
-  const transporter = createTransporter();
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error("Thiếu RESEND_API_KEY trong biến môi trường");
+  }
 
-  await transporter.sendMail({
-    from: `"Smart Aquarium" <${process.env.GMAIL_USER}>`,
-    to: toEmail,
+  const fromEmail =
+    process.env.RESEND_FROM || "Smart Aquarium <onboarding@resend.dev>";
+
+  const { error } = await resend.emails.send({
+    from: fromEmail,
+    to: [toEmail],
     subject: "Mã OTP đăng nhập Smart Aquarium",
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 520px; margin: auto;">
@@ -67,6 +38,11 @@ async function sendOtpEmail(toEmail, otp) {
       </div>
     `,
   });
+
+  if (error) {
+    console.error("Resend email error:", error);
+    throw new Error(error.message || "Không gửi được OTP qua Resend");
+  }
 }
 
 module.exports = {
