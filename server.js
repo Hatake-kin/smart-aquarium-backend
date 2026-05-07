@@ -9,6 +9,13 @@ const { initMQTT } = require("./src/services/mqtt.service");
 
 const PORT = process.env.PORT || 5000;
 
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "http://169.254.135.149:3000",
+  process.env.FRONTEND_URL,
+].filter(Boolean);
+
 // Tạo HTTP server từ Express app
 const httpServer = http.createServer(app);
 
@@ -17,14 +24,12 @@ const httpServer = http.createServer(app);
 const io = new Server(httpServer, {
   path: "/realtime",
   cors: {
-    origin: [
-      "http://localhost:3000",
-      "http://127.0.0.1:3000",
-      "http://169.254.135.149:3000",
-    ],
+    origin: allowedOrigins,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
     credentials: true,
   },
+
+  // Giữ polling để dễ chạy qua Vercel/Railway proxy hơn.
   transports: ["polling"],
 });
 
@@ -68,4 +73,5 @@ initMQTT(io);
 httpServer.listen(PORT, () => {
   console.log(`Server đang chạy tại http://localhost:${PORT}`);
   console.log("Socket.io realtime đã sẵn sàng tại path /realtime");
+  console.log("Allowed origins:", allowedOrigins);
 });

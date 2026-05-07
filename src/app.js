@@ -7,6 +7,9 @@ const rateLimit = require("express-rate-limit");
 
 const app = express();
 
+// Nếu chạy trên Railway/Render/Vercel proxy thì Express cần trust proxy
+app.set("trust proxy", 1);
+
 // ====================== ROUTE IMPORTS ======================
 const authRoutes = require("./routes/auth.routes");
 const tankRoutes = require("./routes/tank.routes");
@@ -28,13 +31,16 @@ app.use(
   })
 );
 
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "http://169.254.135.149:3000",
+  process.env.FRONTEND_URL,
+].filter(Boolean);
+
 app.use(
   cors({
-    origin: [
-      "http://localhost:3000",
-      "http://127.0.0.1:3000",
-      "http://169.254.135.149:3000",
-    ],
+    origin: allowedOrigins,
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
