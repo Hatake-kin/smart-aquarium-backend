@@ -354,7 +354,8 @@ router.patch("/devices/:deviceId", authMiddleware, async (req, res) => {
       req.body.pump !== undefined ||
       req.body.light !== undefined ||
       req.body.oxygen !== undefined ||
-      req.body.auto_mode !== undefined;
+      req.body.auto_mode !== undefined ||
+      req.body.feed !== undefined;
 
     if (!hasAnyControl) {
       await createSystemLog({
@@ -362,12 +363,13 @@ router.patch("/devices/:deviceId", authMiddleware, async (req, res) => {
         action: "control_actuator_failed_invalid_payload",
         entity_type: "device",
         entity_id: deviceId,
-        description: `Người dùng ${req.user.email} điều khiển thiết bị ID ${deviceId} thất bại: payload không có pump/light/oxygen/auto_mode`,
+        description: `Người dùng ${req.user.email} điều khiển thiết bị ID ${deviceId} thất bại: payload không có pump/light/oxygen/auto_mode/feed`,
         ...requestInfo,
       });
 
       return res.status(400).json({
-        message: "Payload phải có ít nhất một trường: pump, light, oxygen, auto_mode",
+        message:
+          "Payload phải có ít nhất một trường: pump, light, oxygen, auto_mode, feed",
       });
     }
 
@@ -389,7 +391,10 @@ router.patch("/devices/:deviceId", authMiddleware, async (req, res) => {
       });
     }
 
-    if (!isAdmin(req.user.role) && Number(device.owner_id) !== Number(req.user.id)) {
+    if (
+      !isAdmin(req.user.role) &&
+      Number(device.owner_id) !== Number(req.user.id)
+    ) {
       await createSystemLog({
         user_id: req.user.id,
         action: "control_actuator_failed_no_permission",
@@ -404,7 +409,10 @@ router.patch("/devices/:deviceId", authMiddleware, async (req, res) => {
       });
     }
 
-    if (device.tank_status === "suspended" || device.device_status === "suspended") {
+    if (
+      device.tank_status === "suspended" ||
+      device.device_status === "suspended"
+    ) {
       await createSystemLog({
         user_id: req.user.id,
         action: "control_actuator_failed_suspended",
@@ -459,29 +467,34 @@ router.patch("/devices/:deviceId", authMiddleware, async (req, res) => {
 
     const topic = `aquarium/${device.owner_id}/${device.tank_id}/control`;
 
+    const isFeedCommand =
+      req.body.feed !== undefined ? toBool(req.body.feed) : false;
+
     const commandPayload = {
-  command_id: `${Date.now()}_${deviceId}`,
-  source: "web",
-  device_id: deviceId,
-  tank_id: device.tank_id,
-  pump: nextState.pump,
-  light: nextState.light,
-  oxygen: nextState.oxygen,
-  auto_mode: nextState.auto_mode,
-  timestamp: new Date().toISOString(),
-};
+      command_id: `${Date.now()}_${deviceId}`,
+      source: "web",
+      device_id: deviceId,
+      tank_id: device.tank_id,
+      pump: nextState.pump,
+      light: nextState.light,
+      oxygen: nextState.oxygen,
+      auto_mode: nextState.auto_mode,
+      feed: isFeedCommand,
+      servo_angle: isFeedCommand ? 90 : undefined,
+      timestamp: new Date().toISOString(),
+    };
 
-// Payload gửi thật xuống ESP qua MQTT.
-// Có token để ESP xác thực lệnh, nhưng không trả token về frontend.
-const mqttPayload = {
-  ...commandPayload,
-};
+    // Payload gửi thật xuống ESP qua MQTT.
+    // Có token để ESP xác thực lệnh, nhưng không trả token về frontend.
+    const mqttPayload = {
+      ...commandPayload,
+    };
 
-if (process.env.DEVICE_MQTT_TOKEN) {
-  mqttPayload.device_token = process.env.DEVICE_MQTT_TOKEN;
-}
+    if (process.env.DEVICE_MQTT_TOKEN) {
+      mqttPayload.device_token = process.env.DEVICE_MQTT_TOKEN;
+    }
 
-await publishMqtt(topic, mqttPayload);
+    await publishMqtt(topic, mqttPayload);
 
     const [stateRows] = await db.query(
       `SELECT *
@@ -503,12 +516,15 @@ await publishMqtt(topic, mqttPayload);
         `Pump=${nextState.pump ? "ON" : "OFF"}, ` +
         `Light=${nextState.light ? "ON" : "OFF"}, ` +
         `Oxygen=${nextState.oxygen ? "ON" : "OFF"}, ` +
-        `Auto=${nextState.auto_mode ? "ON" : "OFF"}`,
+        `Auto=${nextState.auto_mode ? "ON" : "OFF"}, ` +
+        `Feed=${isFeedCommand ? "YES" : "NO"}`,
       ...requestInfo,
     });
 
     res.json({
-      message: "Điều khiển thiết bị thành công",
+      message: isFeedCommand
+        ? "Đã gửi lệnh cho ăn tới thiết bị"
+        : "Điều khiển thiết bị thành công",
       device,
       state: updatedState,
       control_topic: topic,
