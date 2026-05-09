@@ -6,6 +6,7 @@ const http = require("http");
 const app = require("./src/app");
 const { Server } = require("socket.io");
 const { initMQTT } = require("./src/services/mqtt.service");
+const { ensureDeviceModulesTable } = require("./src/config/ensureDeviceModulesTable");
 
 const PORT = process.env.PORT || 5000;
 
@@ -66,12 +67,18 @@ io.on("connection", (socket) => {
   });
 });
 
-// MQTT chỉ init ở đây, không init trong app.js
-initMQTT(io);
+async function startServer() {
+  await ensureDeviceModulesTable();
 
-// Start server
-httpServer.listen(PORT, () => {
-  console.log(`Server đang chạy tại http://localhost:${PORT}`);
-  console.log("Socket.io realtime đã sẵn sàng tại path /realtime");
-  console.log("Allowed origins:", allowedOrigins);
-});
+  // MQTT chỉ init ở đây, không init trong app.js
+  initMQTT(io);
+
+  // Start server
+  httpServer.listen(PORT, () => {
+    console.log(`Server đang chạy tại http://localhost:${PORT}`);
+    console.log("Socket.io realtime đã sẵn sàng tại path /realtime");
+    console.log("Allowed origins:", allowedOrigins);
+  });
+}
+
+startServer();
