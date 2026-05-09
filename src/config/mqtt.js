@@ -1,20 +1,40 @@
-const mqtt = require('mqtt');
+const mqtt = require("mqtt");
 
-const client = mqtt.connect(process.env.MQTT_BROKER, { // Tạo client kết nối đến broker từ .env
+const brokerUrl = process.env.MQTT_BROKER || "mqtt://broker.emqx.io";
+
+const client = mqtt.connect(brokerUrl, {
   reconnectPeriod: 5000,
-  connectTimeout: 10000
+  connectTimeout: 10000,
 });
 
-client.on('connect', () => { //Lắng nghe event 'connect' – chạy khi kết nối thành công.
-  console.log('MQTT Broker kết nối thành công!');
-  // Subscribe tất cả topic liên quan đến sensor
-  client.subscribe('aquarium/+/+/sensor', (err) => {
-    if (!err) console.log('Đã subscribe topic sensor');
+client.on("connect", () => {
+  console.log("MQTT Broker kết nối thành công!");
+
+  client.subscribe("aquarium/+/+/sensor", { qos: 1 }, (err) => {
+    if (err) {
+      console.error("Subscribe topic sensor lỗi:", err.message);
+      return;
+    }
+
+    console.log("Đã subscribe topic sensor");
+  });
+
+  client.subscribe("aquarium/+/+/config_ack", { qos: 1 }, (err) => {
+    if (err) {
+      console.error("Subscribe topic config_ack lỗi:", err.message);
+      return;
+    }
+
+    console.log("Đã subscribe topic config_ack");
   });
 });
 
-client.on('error', (err) => {
-  console.error('MQTT lỗi:', err.message);
+client.on("reconnect", () => {
+  console.log("MQTT đang reconnect...");
+});
+
+client.on("error", (err) => {
+  console.error("MQTT lỗi:", err.message);
 });
 
 module.exports = client;

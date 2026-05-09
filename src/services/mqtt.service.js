@@ -166,10 +166,9 @@ async function shouldSkipDuplicateAlert(tankId, deviceId, alertType) {
   return rows.length > 0;
 }
 
-function validateDeviceToken(payload) {
+function validateDeviceToken(payload, source = "MQTT") {
   const expectedDeviceToken = process.env.DEVICE_MQTT_TOKEN;
 
-  // Nếu chưa cấu hình DEVICE_MQTT_TOKEN thì giữ chế độ cũ để không làm hỏng demo.
   if (!expectedDeviceToken) {
     return true;
   }
@@ -177,11 +176,10 @@ function validateDeviceToken(payload) {
   const incomingDeviceToken = String(payload.device_token || "");
 
   if (incomingDeviceToken !== expectedDeviceToken) {
-    console.log("❌ MQTT sensor bị từ chối: device_token không hợp lệ");
+    console.log(`❌ ${source} bị từ chối: device_token không hợp lệ`);
     return false;
   }
 
-  // Không lưu token vào DB / không đẩy realtime token ra frontend.
   delete payload.device_token;
 
   return true;
@@ -334,6 +332,81 @@ async function publishDeviceConfig(deviceId, meta = {}) {
   return result;
 }
 
+async function handleConfigAck(io, topic, payload) {
+  const parts = topic.split("/");
+
+  if (
+    parts.length !== 4 ||
+    parts[0] !== "aquarium" ||
+    parts[3] !== "config_ack"
+  ) {
+    console.log("❌ Topic config_ack không đúng định dạng");
+    return;
+  }
+
+  if (!validateDeviceToken(payload, "MQTT config_ack")) {
+    return;
+  }
+
+  const userId = Number(parts[1]);
+  const tankId = Number(parts[2]);
+  const deviceId = Number(payload.device_id);
+
+  if (!userId || !tankId || !deviceId) {
+    console.log("❌ config_ack thiếu userId, tankId hoặc device_id");
+    return;
+  }
+
+  const [[tank]] = await db.query(
+    `SELECT id, user_id, status AS tank_status
+     FROM tanks
+     WHERE id = ? AND user_id = ?`,
+    [tankId, userId]
+  );
+
+  if (!tank) {
+    console.log("❌ config_ack: không tìm thấy bể hoặc bể không thuộc user");
+    return;
+  }
+
+  const [[device]] = await db.query(
+    `SELECT id, status
+     FROM devices
+     WHERE id = ? AND tank_id = ?`,
+    [deviceId, tankId]
+  );
+
+  if (!device) {
+    console.log("❌ config_ack: không tìm thấy thiết bị hoặc thiết bị không thuộc bể");
+    return;
+  }
+
+  const ackPayload = {
+    userId,
+    tankId,
+    deviceId,
+    status: payload.status || "unknown",
+    message: payload.message || "",
+    module_count:
+      payload.module_count !== undefined ? Number(payload.module_count) : null,
+    millis: payload.millis || null,
+    timestamp: new Date().toISOString(),
+  };
+
+  await db.query(
+    `UPDATE devices
+     SET last_seen = NOW()
+     WHERE id = ?`,
+    [deviceId]
+  );
+
+  io.to(`user_${userId}`).emit("config_ack", ackPayload);
+  io.to("managers").emit("config_ack", ackPayload);
+
+  console.log("✅ Đã nhận config_ack từ ESP:");
+  console.log(ackPayload);
+}
+
 const initMQTT = (io) => {
   mqttClient.on("message", async (topic, message) => {
     try {
@@ -342,22 +415,31 @@ const initMQTT = (io) => {
 
       const parts = topic.split("/");
 
-      // Topic chuẩn:
-      // aquarium/{user_id}/{tank_id}/sensor
-      if (
-        parts.length !== 4 ||
-        parts[0] !== "aquarium" ||
-        parts[3] !== "sensor"
-      ) {
+if (
+  parts.length === 4 &&
+  parts[0] === "aquarium" &&
+  parts[3] === "config_ack"
+) {
+  await handleConfigAck(io, topic, payload);
+  return;
+}
+
+// Topic chuẩn:
+// aquarium/{user_id}/{tank_id}/sensor
+if (
+  parts.length !== 4 ||
+  parts[0] !== "aquarium" ||
+  parts[3] !== "sensor"
+) {
         console.log(
           "❌ Topic không đúng định dạng aquarium/{user_id}/{tank_id}/sensor"
         );
         return;
       }
 
-      if (!validateDeviceToken(payload)) {
-        return;
-      }
+      if (!validateDeviceToken(payload, "MQTT sensor")) {
+  return;
+}
 
       const userId = Number(parts[1]);
       const tankId = Number(parts[2]);
