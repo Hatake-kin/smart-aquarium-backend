@@ -6,6 +6,8 @@ const {
   getRequestInfo,
 } = require("../services/log.service");
 
+const { publishDeviceConfig } = require("../services/mqtt.service");
+
 const router = express.Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || "demo_secret_key";
@@ -64,6 +66,19 @@ function isAdmin(role) {
 
 function isManager(role) {
   return role === "admin" || role === "moderator";
+}
+
+async function publishDeviceConfigSafely(deviceId, meta = {}) {
+  try {
+    return await publishDeviceConfig(deviceId, meta);
+  } catch (err) {
+    console.error("Publish device config failed:", err);
+
+    return {
+      ok: false,
+      error: err.message || "Publish config thất bại",
+    };
+  }
 }
 
 function normalizeBool(value) {
@@ -468,7 +483,51 @@ router.get("/devices/:deviceId/free-pins", authMiddleware, async (req, res) => {
     });
   }
 });
+// ===============================
+// PUBLISH CONFIG XUỐNG ESP THỦ CÔNG
+// ===============================
+router.post("/devices/:deviceId/publish-config", authMiddleware, async (req, res) => {
+  try {
+    const deviceId = Number(req.params.deviceId);
 
+    if (!deviceId) {
+      return res.status(400).json({
+        message: "Thiếu device_id",
+      });
+    }
+
+    if (req.user.role === "moderator") {
+      return res.status(403).json({
+        message: "Moderator chỉ được xem, không được gửi config xuống thiết bị",
+      });
+    }
+
+    const device = await getDeviceWithOwner(deviceId, req.user);
+
+    if (!device) {
+      return res.status(404).json({
+        message: "Không tìm thấy thiết bị hoặc bạn không có quyền gửi config",
+      });
+    }
+
+    const configPublish = await publishDeviceConfigSafely(deviceId, {
+      reason: "manual_publish",
+    });
+
+    res.json({
+      message: configPublish.ok
+        ? "Đã gửi config xuống ESP"
+        : "Không gửi được config xuống ESP",
+      config_publish: configPublish,
+    });
+  } catch (err) {
+    console.error("Manual publish config error:", err);
+
+    res.status(500).json({
+      message: "Lỗi server khi gửi config xuống ESP",
+    });
+  }
+});
 // ===============================
 // TẠO MODULE
 // ===============================
@@ -596,10 +655,16 @@ router.post("/", authMiddleware, async (req, res) => {
       [result.insertId]
     );
 
-    res.json({
-      message: "Tạo module thành công",
-      module: normalizeModule(rows[0]),
-    });
+    const configPublish = await publishDeviceConfigSafely(deviceId, {
+  reason: "module_created",
+  changed_module_id: result.insertId,
+});
+
+res.json({
+  message: "Tạo module thành công",
+  module: normalizeModule(rows[0]),
+  config_publish: configPublish,
+});
   } catch (err) {
     console.error("Create device module error:", err);
 
@@ -739,10 +804,16 @@ router.patch("/:moduleId", authMiddleware, async (req, res) => {
       [moduleId]
     );
 
-    res.json({
-      message: "Cập nhật module thành công",
-      module: normalizeModule(rows[0]),
-    });
+    const configPublish = await publishDeviceConfigSafely(current.device_id, {
+  reason: "module_updated",
+  changed_module_id: moduleId,
+});
+
+res.json({
+  message: "Cập nhật module thành công",
+  module: normalizeModule(rows[0]),
+  config_publish: configPublish,
+});
   } catch (err) {
     console.error("Update device module error:", err);
 
@@ -785,7 +856,10 @@ router.delete("/:moduleId", authMiddleware, async (req, res) => {
     }
 
     await db.query(`DELETE FROM device_modules WHERE id = ?`, [moduleId]);
-
+    const configPublish = await publishDeviceConfigSafely(current.device_id, {
+  reason: "module_deleted",
+  changed_module_id: moduleId,
+});
     await createSystemLog({
       user_id: req.user.id,
       action: "delete_device_module_success",
@@ -796,9 +870,10 @@ router.delete("/:moduleId", authMiddleware, async (req, res) => {
     });
 
     res.json({
-      message: "Xóa module thành công",
-      module: normalizeModule(current),
-    });
+  message: "Xóa module thành công",
+  module: normalizeModule(current),
+  config_publish: configPublish,
+});
   } catch (err) {
     console.error("Delete device module error:", err);
     res.status(500).json({

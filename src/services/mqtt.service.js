@@ -187,6 +187,153 @@ function validateDeviceToken(payload) {
   return true;
 }
 
+function parseModuleConfigJson(value) {
+  if (!value) return {};
+
+  if (typeof value === "object") {
+    return value;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+}
+
+function publishMqtt(topic, payload, options = {}) {
+  return new Promise((resolve, reject) => {
+    const message = JSON.stringify(payload);
+
+    mqttClient.publish(
+      topic,
+      message,
+      {
+        qos: options.qos ?? 1,
+        retain: options.retain ?? true,
+      },
+      (err) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+
+        resolve({
+          ok: true,
+          topic,
+          payload,
+        });
+      }
+    );
+  });
+}
+
+async function getDeviceConfigPayload(deviceId, meta = {}) {
+  const [[device]] = await db.query(
+    `SELECT
+      d.id AS device_id,
+      d.tank_id,
+      d.device_code,
+      d.name AS device_name,
+      d.status AS device_status,
+      t.user_id AS owner_id,
+      t.name AS tank_name,
+      t.tank_code,
+      t.status AS tank_status
+     FROM devices d
+     LEFT JOIN tanks t ON d.tank_id = t.id
+     WHERE d.id = ?`,
+    [deviceId]
+  );
+
+  if (!device) {
+    throw new Error(`Không tìm thấy device_id ${deviceId}`);
+  }
+
+  const [moduleRows] = await db.query(
+    `SELECT
+      id,
+      module_code,
+      name,
+      connection_type,
+      io_mode,
+      module_type,
+      pin,
+      pin2,
+      pin3,
+      unit,
+      protocol,
+      node_type,
+      node_code,
+      config_json,
+      enabled,
+      updated_at
+     FROM device_modules
+     WHERE device_id = ?
+     ORDER BY id ASC`,
+    [deviceId]
+  );
+
+  const modules = moduleRows.map((module) => ({
+    id: module.id,
+    module_code: module.module_code,
+    name: module.name,
+    connection_type: module.connection_type,
+    io_mode: module.io_mode,
+    module_type: module.module_type,
+    pin: module.pin,
+    pin2: module.pin2,
+    pin3: module.pin3,
+    unit: module.unit,
+    protocol: module.protocol,
+    node_type: module.node_type,
+    node_code: module.node_code,
+    enabled: Boolean(module.enabled),
+    config: parseModuleConfigJson(module.config_json),
+    updated_at: module.updated_at,
+  }));
+
+  const topic = `aquarium/${device.owner_id}/${device.tank_id}/config`;
+
+  const payload = {
+    type: "config_update",
+    version: 1,
+    reason: meta.reason || "manual_publish",
+    changed_module_id: meta.changed_module_id || null,
+    device_id: device.device_id,
+    device_code: device.device_code,
+    tank_id: device.tank_id,
+    owner_id: device.owner_id,
+    timestamp: new Date().toISOString(),
+    modules,
+  };
+
+  return {
+    topic,
+    payload,
+    device,
+  };
+}
+
+async function publishDeviceConfig(deviceId, meta = {}) {
+  const { topic, payload, device } = await getDeviceConfigPayload(deviceId, meta);
+
+  console.log("");
+  console.log("📤 Publish device config");
+  console.log("Topic:", topic);
+  console.log("Device:", device.device_code);
+  console.log("Modules:", payload.modules.length);
+
+  const result = await publishMqtt(topic, payload, {
+    qos: 1,
+    retain: true,
+  });
+
+  console.log("✅ Publish device config OK");
+
+  return result;
+}
+
 const initMQTT = (io) => {
   mqttClient.on("message", async (topic, message) => {
     try {
@@ -406,4 +553,7 @@ const initMQTT = (io) => {
   });
 };
 
-module.exports = { initMQTT };
+module.exports = {
+  initMQTT,
+  publishDeviceConfig,
+};
