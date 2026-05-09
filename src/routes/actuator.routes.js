@@ -460,18 +460,28 @@ router.patch("/devices/:deviceId", authMiddleware, async (req, res) => {
     const topic = `aquarium/${device.owner_id}/${device.tank_id}/control`;
 
     const commandPayload = {
-      command_id: `${Date.now()}_${deviceId}`,
-      source: "web",
-      device_id: deviceId,
-      tank_id: device.tank_id,
-      pump: nextState.pump,
-      light: nextState.light,
-      oxygen: nextState.oxygen,
-      auto_mode: nextState.auto_mode,
-      timestamp: new Date().toISOString(),
-    };
+  command_id: `${Date.now()}_${deviceId}`,
+  source: "web",
+  device_id: deviceId,
+  tank_id: device.tank_id,
+  pump: nextState.pump,
+  light: nextState.light,
+  oxygen: nextState.oxygen,
+  auto_mode: nextState.auto_mode,
+  timestamp: new Date().toISOString(),
+};
 
-    await publishMqtt(topic, commandPayload);
+// Payload gửi thật xuống ESP qua MQTT.
+// Có token để ESP xác thực lệnh, nhưng không trả token về frontend.
+const mqttPayload = {
+  ...commandPayload,
+};
+
+if (process.env.DEVICE_MQTT_TOKEN) {
+  mqttPayload.device_token = process.env.DEVICE_MQTT_TOKEN;
+}
+
+await publishMqtt(topic, mqttPayload);
 
     const [stateRows] = await db.query(
       `SELECT *

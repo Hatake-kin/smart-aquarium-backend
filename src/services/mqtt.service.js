@@ -166,6 +166,27 @@ async function shouldSkipDuplicateAlert(tankId, deviceId, alertType) {
   return rows.length > 0;
 }
 
+function validateDeviceToken(payload) {
+  const expectedDeviceToken = process.env.DEVICE_MQTT_TOKEN;
+
+  // Nếu chưa cấu hình DEVICE_MQTT_TOKEN thì giữ chế độ cũ để không làm hỏng demo.
+  if (!expectedDeviceToken) {
+    return true;
+  }
+
+  const incomingDeviceToken = String(payload.device_token || "");
+
+  if (incomingDeviceToken !== expectedDeviceToken) {
+    console.log("❌ MQTT sensor bị từ chối: device_token không hợp lệ");
+    return false;
+  }
+
+  // Không lưu token vào DB / không đẩy realtime token ra frontend.
+  delete payload.device_token;
+
+  return true;
+}
+
 const initMQTT = (io) => {
   mqttClient.on("message", async (topic, message) => {
     try {
@@ -184,6 +205,10 @@ const initMQTT = (io) => {
         console.log(
           "❌ Topic không đúng định dạng aquarium/{user_id}/{tank_id}/sensor"
         );
+        return;
+      }
+
+      if (!validateDeviceToken(payload)) {
         return;
       }
 
