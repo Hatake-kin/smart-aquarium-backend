@@ -57,6 +57,7 @@ async function ensureDeviceModulesTable() {
     console.log("✅ device_modules table ready");
   } catch (err) {
     console.error("❌ Cannot ensure device_modules table:", err);
+    throw err;
   }
 }
 

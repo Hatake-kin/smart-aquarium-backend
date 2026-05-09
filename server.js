@@ -14,7 +14,10 @@ const allowedOrigins = [
   "http://localhost:3000",
   "http://127.0.0.1:3000",
   "http://169.254.135.149:3000",
+  "https://hatake-aquarium.site",
+  "https://www.hatake-aquarium.site",
   process.env.FRONTEND_URL,
+  process.env.VERCEL_FRONTEND_URL,
 ].filter(Boolean);
 
 // Tạo HTTP server từ Express app
@@ -68,17 +71,22 @@ io.on("connection", (socket) => {
 });
 
 async function startServer() {
-  await ensureDeviceModulesTable();
+  try {
+    await ensureDeviceModulesTable();
 
-  // MQTT chỉ init ở đây, không init trong app.js
-  initMQTT(io);
+    // MQTT chỉ init ở đây, không init trong app.js
+    initMQTT(io);
 
-  // Start server
-  httpServer.listen(PORT, () => {
-    console.log(`Server đang chạy tại http://localhost:${PORT}`);
-    console.log("Socket.io realtime đã sẵn sàng tại path /realtime");
-    console.log("Allowed origins:", allowedOrigins);
-  });
+    // Start server
+    httpServer.listen(PORT, () => {
+      console.log(`Server đang chạy tại http://localhost:${PORT}`);
+      console.log("Socket.io realtime đã sẵn sàng tại path /realtime");
+      console.log("Allowed origins:", allowedOrigins);
+    });
+  } catch (err) {
+    console.error("Không thể khởi động server:", err);
+    process.exit(1);
+  }
 }
 
 startServer();
