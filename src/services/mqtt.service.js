@@ -497,6 +497,55 @@ if (
         payload.battery !== undefined ? Number(payload.battery) : null;
       const rssi = payload.rssi !== undefined ? Number(payload.rssi) : null;
 
+      const waterLevelSource =
+        payload.water_level_source !== undefined
+          ? String(payload.water_level_source)
+          : null;
+
+      const distanceCm =
+        payload.distance_cm !== undefined ? Number(payload.distance_cm) : null;
+
+      const waterDistanceCm =
+        payload.water_distance_cm !== undefined
+          ? Number(payload.water_distance_cm)
+          : distanceCm;
+
+      const waterLevelCm =
+        payload.water_level_cm !== undefined ? Number(payload.water_level_cm) : null;
+
+      const waterEmptyDistanceCm =
+        payload.water_empty_distance_cm !== undefined
+          ? Number(payload.water_empty_distance_cm)
+          : null;
+
+      const wirelessNodeCode =
+        payload.wireless_node_code !== undefined
+          ? String(payload.wireless_node_code)
+          : null;
+
+      const wirelessModuleType =
+        payload.module_type !== undefined ? String(payload.module_type) : null;
+
+      const waterWirelessSeq =
+        payload.water_wireless_seq !== undefined
+          ? Number(payload.water_wireless_seq)
+          : null;
+
+      const waterWirelessAgeMs =
+        payload.water_wireless_age_ms !== undefined
+          ? Number(payload.water_wireless_age_ms)
+          : null;
+
+      const waterWirelessNodeUptimeMs =
+        payload.water_wireless_node_uptime_ms !== undefined
+          ? Number(payload.water_wireless_node_uptime_ms)
+          : null;
+
+      const wirelessNodeOnline =
+        waterLevelSource === "esp_now_hc_sr04" &&
+        waterWirelessAgeMs !== null &&
+        waterWirelessAgeMs <= 15000;
+
       // Lưu sensor data vào DB
       const [result] = await db.query(
         `INSERT INTO sensor_data
@@ -586,6 +635,17 @@ if (
           temperature,
           ph,
           water_level: waterLevel,
+          water_level_source: waterLevelSource,
+          distance_cm: distanceCm,
+          water_distance_cm: waterDistanceCm,
+          water_level_cm: waterLevelCm,
+          water_empty_distance_cm: waterEmptyDistanceCm,
+          wireless_node_code: wirelessNodeCode,
+          wireless_module_type: wirelessModuleType,
+          water_wireless_seq: waterWirelessSeq,
+          water_wireless_age_ms: waterWirelessAgeMs,
+          water_wireless_node_uptime_ms: waterWirelessNodeUptimeMs,
+          wireless_node_online: wirelessNodeOnline,
           battery,
           rssi,
         },
