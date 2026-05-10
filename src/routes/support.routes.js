@@ -92,6 +92,90 @@ function normalizeStatus(value) {
   return "pending";
 }
 
+function getSupportStatusLabel(status) {
+  const labels = {
+    pending: "Chưa xử lý",
+    in_progress: "Đang xử lý",
+    resolved: "Đã xử lý",
+    rejected: "Từ chối",
+  };
+
+  return labels[status] || status;
+}
+
+function getSupportTypeLabel(type) {
+  const labels = {
+    upgrade_plan: "Yêu cầu nâng cấp Premium",
+    device_issue: "Báo lỗi thiết bị",
+    technical_support: "Hỗ trợ kỹ thuật",
+    billing: "Thanh toán / gói dịch vụ",
+    other: "Khác",
+  };
+
+  return labels[type] || type;
+}
+
+function getSocketIo(req) {
+  try {
+    return (
+      req.app.get("io") ||
+      req.app.locals?.io ||
+      global.io ||
+      global._io ||
+      null
+    );
+  } catch (err) {
+    return null;
+  }
+}
+
+function emitToUser(req, userId, eventName, payload) {
+  const io = getSocketIo(req);
+
+  if (!io || !userId) {
+    return;
+  }
+
+  const id = String(userId);
+
+  const rooms = [
+    id,
+    "user_" + id,
+    "user:" + id,
+    "user-" + id,
+    "user_room_" + id,
+  ];
+
+  rooms.forEach((room) => {
+    io.to(room).emit(eventName, payload);
+  });
+}
+
+function emitToManagers(req, eventName, payload) {
+  const io = getSocketIo(req);
+
+  if (!io) {
+    return;
+  }
+
+  const rooms = [
+    "admin",
+    "moderator",
+    "manager",
+    "managers",
+    "role_admin",
+    "role_moderator",
+    "manager_admin",
+    "manager_moderator",
+    "admin_room",
+    "moderator_room",
+  ];
+
+  rooms.forEach((room) => {
+    io.to(room).emit(eventName, payload);
+  });
+}
+
 router.post("/", authMiddleware, async (req, res) => {
   try {
     await ensureSupportRequestsTable();
@@ -139,6 +223,20 @@ router.post("/", authMiddleware, async (req, res) => {
     } catch (logErr) {
       console.warn("Create support request log failed:", logErr.message);
     }
+
+    const createdPayload = {
+      id: result.insertId,
+      user_id: userId,
+      request_type: requestType,
+      request_type_label: getSupportTypeLabel(requestType),
+      subject,
+      status: "pending",
+      status_label: getSupportStatusLabel("pending"),
+      message: "Có yêu cầu hỗ trợ mới: " + subject,
+      timestamp: new Date().toISOString(),
+    };
+
+    emitToManagers(req, "support_request_created", createdPayload);
 
     res.status(201).json({
       message: "Đã gửi yêu cầu hỗ trợ thành công",
@@ -302,6 +400,23 @@ router.patch("/admin/:id", authMiddleware, managerOnly, async (req, res) => {
     } catch (logErr) {
       console.warn("Update support request log failed:", logErr.message);
     }
+
+    const updatedPayload = {
+      id: requestId,
+      user_id: rows[0].user_id,
+      subject: rows[0].subject,
+      status,
+      status_label: getSupportStatusLabel(status),
+      admin_reply: adminReply,
+      message:
+        "Admin đã phản hồi yêu cầu hỗ trợ #" +
+        requestId +
+        ": " +
+        getSupportStatusLabel(status),
+      timestamp: new Date().toISOString(),
+    };
+
+    emitToUser(req, rows[0].user_id, "support_request_updated", updatedPayload);
 
     res.json({
       message: "Cập nhật yêu cầu hỗ trợ thành công",
