@@ -53,10 +53,11 @@ function managerOnly(req, res, next) {
 }
 
 // Admin + Moderator xem danh sách user
+// Admin + Moderator xem danh sách user
 router.get("/users", authMiddleware, managerOnly, async (req, res) => {
   try {
     const [rows] = await db.query(
-      `SELECT 
+      `SELECT
         id,
         email,
         full_name,
@@ -66,7 +67,19 @@ router.get("/users", authMiddleware, managerOnly, async (req, res) => {
         plan_expires_at,
         is_active,
         last_login,
-        created_at
+        created_at,
+        CASE
+          WHEN is_active = 0 THEN 'locked'
+          WHEN last_login IS NULL THEN 'offline'
+          WHEN TIMESTAMPDIFF(MINUTE, last_login, UTC_TIMESTAMP()) <= 15 THEN 'active'
+          ELSE 'offline'
+        END AS computed_status,
+        CASE
+          WHEN is_active = 0 THEN 'Bị khóa'
+          WHEN last_login IS NULL THEN 'Ngoại tuyến'
+          WHEN TIMESTAMPDIFF(MINUTE, last_login, UTC_TIMESTAMP()) <= 15 THEN 'Đang hoạt động'
+          ELSE 'Ngoại tuyến'
+        END AS status_label
        FROM users
        ORDER BY id DESC`
     );
@@ -74,6 +87,12 @@ router.get("/users", authMiddleware, managerOnly, async (req, res) => {
     res.json({
       message: "Lấy danh sách người dùng thành công",
       users: rows,
+      status_rule: {
+        active_window_minutes: 15,
+        active: "Đăng nhập trong 15 phút gần nhất",
+        offline: "Quá 15 phút hoặc chưa từng đăng nhập",
+        locked: "Tài khoản bị khóa",
+      },
     });
   } catch (err) {
     console.error("Admin get users error:", err);
