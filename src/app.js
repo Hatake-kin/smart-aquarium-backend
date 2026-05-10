@@ -24,6 +24,7 @@ const adminRoutes = require("./routes/admin.routes");
 const cameraRoutes = require("./routes/camera.routes");
 const thresholdRoutes = require("./routes/threshold.routes");
 const systemLogRoutes = require("./routes/system-log.routes");
+const supportRoutes = require("./routes/support.routes");
 
 // ====================== MIDDLEWARE ======================
 app.use(
@@ -101,6 +102,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/camera", cameraRoutes);
 app.use("/api/thresholds", thresholdRoutes);
 app.use("/api/system-logs", systemLogRoutes);
+app.use("/api/support", supportRoutes);
 
 // ====================== NOT FOUND ======================
 app.use((req, res) => {
